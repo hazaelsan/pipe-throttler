@@ -23,12 +23,12 @@ func mkString(n int, sep string, tail bool) string {
 
 func TestByRE(t *testing.T) {
 	testdata := map[string][]string{
-		mkString(3, "\n", true): []string{
+		mkString(3, "\n", true): {
 			"line 1\n",
 			"line 2\n",
 			"line 3\n",
 		},
-		mkString(3, "\n", false): []string{
+		mkString(3, "\n", false): {
 			"line 1\n",
 			"line 2\n",
 			"line 3",
@@ -52,12 +52,12 @@ func TestByRE(t *testing.T) {
 
 func TestBySize(t *testing.T) {
 	testdata := map[string][]string{
-		mkString(3, "\n", true): []string{
+		mkString(3, "\n", true): {
 			"line 1\n",
 			"line 2\n",
 			"line 3\n",
 		},
-		mkString(3, "\n", false): []string{
+		mkString(3, "\n", false): {
 			"line 1\n",
 			"line 2\n",
 			"line 3",
