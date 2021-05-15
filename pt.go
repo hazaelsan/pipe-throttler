@@ -23,7 +23,7 @@ import (
 
 var (
 	interval   = flag.Duration("interval", 0, "how long to wait after the throttler is ready before outputting the next data chunk")
-	size       = flag.Uint("size", 0, "how many bytes to read from stdin, overrides --split_input if > 0")
+	size       = flag.Uint("size", 0, "how many bytes to read from stdin, overrides --split if > 0")
 	splitInput = flag.String("split", "\n", "regular expression on which to split stdin")
 )
 
