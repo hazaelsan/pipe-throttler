@@ -27,10 +27,7 @@ func ByRE(re *regexp.Regexp) bufio.SplitFunc {
 func BySize(size int) bufio.SplitFunc {
 	return func(data []byte, atEOF bool) (advance int, token []byte, err error) {
 		if atEOF {
-			if len(data) == 0 {
-				return 0, nil, nil
-			}
-			return len(data), data, nil
+			return 0, nil, nil
 		}
 		if size > len(data) {
 			return len(data), data, nil
