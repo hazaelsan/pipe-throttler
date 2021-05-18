@@ -17,21 +17,28 @@ const (
 	shCmd      = "echo stdout 1; echo stderr 1 >/dev/stderr; echo stdout 2; echo stderr 2 >/dev/stderr; echo -n stdout 3; echo -n stderr 3 >/dev/stderr"
 )
 
-var errWrite = errors.New("write error")
-
-type badWriter struct{}
-
-func (badWriter) Write([]byte) (int, error) {
-	return 0, errWrite
-}
+var (
+	errClosed = errors.New("already closed")
+	errWrite  = errors.New("write error")
+)
 
 type appendWriter struct {
-	s []string
+	s      []string
+	closed bool
+	err    error
 }
 
 func (a *appendWriter) Write(b []byte) (int, error) {
 	a.s = append(a.s, string(b))
-	return len(b), nil
+	return len(b), a.err
+}
+
+func (a *appendWriter) Close() error {
+	if a.closed {
+		return errClosed
+	}
+	a.closed = true
+	return nil
 }
 
 func goodOpts(d time.Duration) Options {
@@ -39,6 +46,86 @@ func goodOpts(d time.Duration) Options {
 		Command:   []string{"sh", "-c", shCmd},
 		Timeout:   d,
 		SplitFunc: split.ByRE(regexp.MustCompile("\n")),
+	}
+}
+
+func TestNew(t *testing.T) {
+	testdata := []struct {
+		name string
+		opts Options
+		err  error
+	}{
+		{
+			name: "good",
+			opts: goodOpts(time.Millisecond),
+		},
+		{
+			name: "no command",
+			opts: Options{},
+			err:  ErrNoCommand,
+		},
+	}
+	for _, tt := range testdata {
+		if _, err := New(tt.opts); !errors.Is(err, tt.err) {
+			t.Errorf("New(%v) error = %v, want %v", tt.name, err, tt.err)
+		}
+	}
+}
+
+func TestStart(t *testing.T) {
+	testdata := []struct {
+		name string
+		f    func(*Expect)
+		ok   bool
+	}{
+		{
+			name: "good stdout",
+			f:    func(*Expect) {},
+			ok:   true,
+		},
+		{
+			name: "good stderr",
+			f: func(e *Expect) {
+				e.opts.MatchStderr = true
+			},
+			ok: true,
+		},
+		{
+			name: "bad stdin",
+			f: func(e *Expect) {
+				e.cmd.Stdin = strings.NewReader("foo")
+			},
+		},
+		{
+			name: "bad stdout",
+			f: func(e *Expect) {
+				e.cmd.Stdout = new(strings.Builder)
+			},
+		},
+		{
+			name: "bad stderr",
+			f: func(e *Expect) {
+				e.opts.MatchStderr = true
+				e.cmd.Stderr = new(strings.Builder)
+			},
+		},
+	}
+	for _, tt := range testdata {
+		e, err := New(goodOpts(time.Millisecond))
+		if err != nil {
+			t.Errorf("New(%v) error = %v", tt.name, err)
+			continue
+		}
+		tt.f(e)
+		if err := e.Start(); err != nil {
+			if tt.ok {
+				t.Errorf("Start(%v) error = %v", tt.name, err)
+			}
+			continue
+		}
+		if !tt.ok {
+			t.Errorf("Start(%v) error = nil", tt.name)
+		}
 	}
 }
 
@@ -144,7 +231,8 @@ func TestReader_error(t *testing.T) {
 	}
 	e.s = bufio.NewScanner(strings.NewReader(want))
 	e.s.Split(e.opts.SplitFunc)
-	e.tee = new(badWriter)
+	e.tee = new(appendWriter)
+	e.tee.(*appendWriter).err = errWrite
 	go e.reader()
 	select {
 	case <-e.found:
@@ -155,6 +243,18 @@ func TestReader_error(t *testing.T) {
 		}
 	case <-time.After(100 * time.Millisecond):
 		t.Fatal("timeout")
+	}
+}
+
+func TestWrite(t *testing.T) {
+	e, err := New(goodOpts(10 * time.Millisecond))
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	e.w = new(appendWriter)
+	e.w.(*appendWriter).err = errWrite
+	if _, err := e.Write([]byte("foo")); !errors.Is(err, errWrite) {
+		t.Errorf("Write() error = %v, want %v", err, errWrite)
 	}
 }
 
@@ -176,6 +276,9 @@ func TestExpect(t *testing.T) {
 			continue
 		}
 		break
+	}
+	if err := e.DoneRead(); err != nil {
+		t.Errorf("DoneRead() error = %v", err)
 	}
 	if err := e.Stop(); err != nil {
 		t.Errorf("Stop() error = %v", err)
