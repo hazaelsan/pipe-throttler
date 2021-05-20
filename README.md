@@ -1,6 +1,6 @@
 # Pipe Throttler
 
-[![Build Status](https://travis-ci.com/hazaelsan/pipe-throttler.svg?branch=master)](https://travis-ci.com/hazaelsan/pipe-throttler)
+[![Build Status](https://travis-ci.com/hazaelsan/pipe-throttler.svg?branch=main)](https://travis-ci.com/hazaelsan/pipe-throttler)
 [![GoDoc](https://godoc.org/github.com/hazaelsan/pipe-throttler?status.svg)](https://godoc.org/github.com/hazaelsan/pipe-throttler)
 
 `pt` is a UNIX pipeline throttler.  It takes data from `stdin` and throttles writing it out to `stdout`.
