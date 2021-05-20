@@ -12,10 +12,10 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
 	"regexp"
+	"time"
 
 	"github.com/hazaelsan/pipe-throttler/runner"
 	"github.com/hazaelsan/pipe-throttler/split"
@@ -35,9 +35,12 @@ var (
 	expectTimeout = flag.Duration("expect_timeout", 0, "how long to wait for the wrapped command to match --expect_split, waits forever if <= 0")
 )
 
-func newSplitFunc(size uint, pat string) (bufio.SplitFunc, error) {
+func newSplitFunc(size int, pat string) (bufio.SplitFunc, error) {
 	if size > 0 {
-		return split.BySize(int(size)), nil
+		return split.BySize(size), nil
+	}
+	if pat == "" {
+		return nil, errors.New("empty split pattern")
 	}
 	re, err := regexp.Compile(pat)
 	if err != nil {
@@ -46,36 +49,43 @@ func newSplitFunc(size uint, pat string) (bufio.SplitFunc, error) {
 	return split.ByRE(re), nil
 }
 
-func newThrottler() (throttler.Throttler, error) {
-	if len(flag.Args()) > 0 {
-		return newExpect()
+func newThrottler(args []string, size int, split string, stderr bool, timeout time.Duration) (throttler.Throttler, error) {
+	if len(args) == 0 {
+		return dummy.New(os.Stdout), nil
 	}
-	return dummy.New(os.Stdout), nil
-}
-
-func newExpect() (*expect.Expect, error) {
-	f, err := newSplitFunc(*expectSize, *expectSplit)
+	f, err := newSplitFunc(size, split)
 	if err != nil {
 		return nil, err
 	}
 	opts := expect.Options{
-		Command:     flag.Args(),
-		MatchStderr: *expectStderr,
+		Command:     args,
+		MatchStderr: stderr,
 		SplitFunc:   f,
-		Timeout:     *expectTimeout,
+		Timeout:     timeout,
 	}
 	return expect.New(opts)
 }
 
-func main() {
-	flag.Parse()
-	f, err := newSplitFunc(*size, *splitInput)
-	if err != nil {
-		log.Fatal(err)
+func exitCode(err error) int {
+	if err == nil {
+		return 0
 	}
-	t, err := newThrottler()
+	var e *exec.ExitError
+	if errors.As(err, &e) {
+		return e.ExitCode()
+	}
+	fmt.Fprintln(os.Stderr, err)
+	return 1
+}
+
+func newRunner() (*runner.Runner, error) {
+	f, err := newSplitFunc(int(*size), *splitInput)
 	if err != nil {
-		log.Fatal(err)
+		return nil, err
+	}
+	t, err := newThrottler(flag.Args(), int(*expectSize), *expectSplit, *expectStderr, *expectTimeout)
+	if err != nil {
+		return nil, err
 	}
 	opts := runner.Options{
 		Reader:       os.Stdin,
@@ -83,13 +93,18 @@ func main() {
 		SplitFunc:    f,
 		WaitDuration: *interval,
 	}
-	r := runner.New(opts)
-	if err := r.Run(); err != nil {
-		var e *exec.ExitError
-		if errors.As(err, &e) {
-			os.Exit(e.ExitCode())
-		}
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+	return runner.New(opts), nil
+}
+
+func run() error {
+	r, err := newRunner()
+	if err != nil {
+		return err
 	}
+	return r.Run()
+}
+
+func main() {
+	flag.Parse()
+	os.Exit(exitCode(run()))
 }
